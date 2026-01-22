@@ -300,116 +300,226 @@ class TemporalDatasetGenerator:
         
         return split_data
     
-    def save_dataset(self, output_name=None):
-        """
-        Save generated dataset to disk
+    # def save_dataset(self, output_name=None):
+    #     """
+    #     Save generated dataset to disk
         
-        Args:
-            output_name: Custom output filename (None = auto-generate)
+    #     Args:
+    #         output_name: Custom output filename (None = auto-generate)
+    #     """
+    #     if not self.temporal_data:
+    #         print("Error: No data to save. Run generate_all_velocities() first.")
+    #         return
+        
+    #     # Generate filename
+    #     if output_name is None:
+    #         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #         output_name = f"temporal_dataset_{self.config.ANTENNA_CONFIG}_{timestamp}.pkl"
+        
+    #     output_path = os.path.join(self.config.PROCESSED_DATA_DIR, output_name)
+        
+    #     print(f"\nSaving dataset to: {output_path}")
+        
+    #     # Prepare data for saving
+    #     save_data = {
+    #         'config': {
+    #             'scenario': self.config.SCENARIO,
+    #             'antenna_config': self.config.ANTENNA_CONFIG,
+    #             'carrier_frequency': self.config.CARRIER_FREQUENCY,
+    #             'num_subcarriers': self.config.NUM_SUBCARRIERS,
+    #             'sequence_length': self.config.SEQUENCE_LENGTH,
+    #             'sampling_interval': self.config.SAMPLING_INTERVAL,
+    #             'velocity_classes': self.config.VELOCITY_CLASSES,
+    #             'channel_config': self.config.CHANNEL_CONFIG,
+    #         },
+    #         'velocity_data': {}
+    #     }
+        
+    #     # Split each velocity class and save
+    #     for vel_class, data in self.temporal_data.items():
+    #         split_data = self.split_train_val_test(data)
+            
+    #         # Store split data along with metadata
+    #         save_data['velocity_data'][vel_class] = {
+    #             'splits': split_data,
+    #             'metadata': {
+    #                 'velocity_ms': data['velocity_ms'],
+    #                 'velocity_kmh': data['velocity_kmh'],
+    #                 'fd_max': data['fd_max'],
+    #                 'Tc': data['Tc'],
+    #                 'snr_db': data['snr_db'],
+    #             }
+    #         }
+            
+    #         print(f"  ✓ {vel_class}: train={len(split_data['X_train'])}, "
+    #               f"val={len(split_data['X_val'])}, test={len(split_data['X_test'])}")
+        
+    #     # Save with pickle
+    #     with open(output_path, 'wb') as f:
+    #         pickle.dump(save_data, f, protocol=4)
+        
+    #     file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+    #     print(f"\n✓ Dataset saved successfully!")
+    #     print(f"  File size: {file_size_mb:.2f} MB")
+    #     print(f"  Path: {output_path}")
+        
+    #     return output_path
+    def save_dataset(self, output_name=None, save_mode="raw"):
+        """
+        Save dataset.
+
+        Option-A (your current goal): save_mode="raw"
+        - Saves ONLY:
+            H_temporal (clean Doppler CSI)
+            H_noisy    (after channel effects; equals H_temporal if add_noise=False)
+        - NO sequences, NO train/val/test splits.
         """
         if not self.temporal_data:
             print("Error: No data to save. Run generate_all_velocities() first.")
             return
-        
-        # Generate filename
+
+        if save_mode != "raw":
+            raise ValueError("For now, use save_mode='raw' (Option-A).")
+
         if output_name is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_name = f"temporal_dataset_{self.config.ANTENNA_CONFIG}_{timestamp}.pkl"
-        
+            output_name = f"temporal_RAW_{self.config.ANTENNA_CONFIG}_{timestamp}.pkl"
+
         output_path = os.path.join(self.config.PROCESSED_DATA_DIR, output_name)
-        
-        print(f"\nSaving dataset to: {output_path}")
-        
-        # Prepare data for saving
+        print(f"\nSaving RAW dataset to: {output_path}")
+
         save_data = {
-            'config': {
-                'scenario': self.config.SCENARIO,
-                'antenna_config': self.config.ANTENNA_CONFIG,
-                'carrier_frequency': self.config.CARRIER_FREQUENCY,
-                'num_subcarriers': self.config.NUM_SUBCARRIERS,
-                'sequence_length': self.config.SEQUENCE_LENGTH,
-                'sampling_interval': self.config.SAMPLING_INTERVAL,
-                'velocity_classes': self.config.VELOCITY_CLASSES,
-                'channel_config': self.config.CHANNEL_CONFIG,
+            "dataset_type": "RAW_TEMPORAL_CSI",
+            "save_mode": "raw",
+            "config": {
+                "scenario": self.config.SCENARIO,
+                "antenna_config": self.config.ANTENNA_CONFIG,
+                "carrier_frequency": self.config.CARRIER_FREQUENCY,
+                "num_subcarriers": self.config.NUM_SUBCARRIERS,
+                "sampling_interval": self.config.SAMPLING_INTERVAL,
+                "velocity_classes": self.config.VELOCITY_CLASSES,
+                "channel_config": self.config.CHANNEL_CONFIG,
+                "num_users_per_velocity": self.config.NUM_USERS_PER_VELOCITY,
+                "total_time_steps": self.config.TOTAL_TIME_STEPS,
             },
-            'velocity_data': {}
+            "velocity_data": {}
         }
-        
-        # Split each velocity class and save
-        for vel_class, data in self.temporal_data.items():
-            split_data = self.split_train_val_test(data)
-            
-            # Store split data along with metadata
-            save_data['velocity_data'][vel_class] = {
-                'splits': split_data,
-                'metadata': {
-                    'velocity_ms': data['velocity_ms'],
-                    'velocity_kmh': data['velocity_kmh'],
-                    'fd_max': data['fd_max'],
-                    'Tc': data['Tc'],
-                    'snr_db': data['snr_db'],
+
+        for vel_class, d in self.temporal_data.items():
+            save_data["velocity_data"][vel_class] = {
+                "raw": {
+                    "H_temporal": d["H_temporal"],
+                    "H_noisy": d["H_noisy"],
+                },
+                "metadata": {
+                    "velocity_ms": d["velocity_ms"],
+                    "velocity_kmh": d["velocity_kmh"],
+                    "fd_max": d["fd_max"],
+                    "Tc": d["Tc"],
+                    "snr_db": d.get("snr_db", None),
                 }
             }
-            
-            print(f"  ✓ {vel_class}: train={len(split_data['X_train'])}, "
-                  f"val={len(split_data['X_val'])}, test={len(split_data['X_test'])}")
-        
-        # Save with pickle
-        with open(output_path, 'wb') as f:
+            print(f"  ✓ {vel_class}: H_temporal={d['H_temporal'].shape}, snr_db={d.get('snr_db', None)}")
+
+        with open(output_path, "wb") as f:
             pickle.dump(save_data, f, protocol=4)
-        
+
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        print(f"\n✓ Dataset saved successfully!")
+        print(f"\n✓ RAW dataset saved successfully!")
         print(f"  File size: {file_size_mb:.2f} MB")
         print(f"  Path: {output_path}")
-        
+
         return output_path
 
-
 def load_dataset(filepath):
-    """
-    Load saved dataset
-    
-    Args:
-        filepath: Path to saved .pkl file
-        
-    Returns:
-        Loaded dataset dictionary
-    """
     print(f"Loading dataset from: {filepath}")
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         data = pickle.load(f)
-    
+
     print("✓ Dataset loaded successfully!")
-    
-    # Print summary
+
+    print("\nDataset Type:", data.get("dataset_type", "UNKNOWN"))
+    print("Save Mode:", data.get("save_mode", "UNKNOWN"))
+
     print("\nDataset Configuration:")
-    for key, value in data['config'].items():
+    for key, value in data["config"].items():
         print(f"  {key}: {value}")
-    
-    print("\nVelocity Classes:")
-    for vel_class, vel_data in data['velocity_data'].items():
-        metadata = vel_data['metadata']
-        splits = vel_data['splits']
-        print(f"  {vel_class}: {metadata['velocity_kmh']:.0f} km/h, "
-              f"train={len(splits['X_train'])}")
-    
+
+    print("\nVelocity Classes Summary:")
+    for vel_class, vel_data in data["velocity_data"].items():
+        md = vel_data["metadata"]
+
+        if "raw" in vel_data:
+            Ht = vel_data["raw"]["H_temporal"]
+            Hn = vel_data["raw"]["H_noisy"]
+            print(f"  {vel_class}: {md['velocity_kmh']:.0f} km/h | "
+                  f"H_temporal={Ht.shape} | H_noisy={Hn.shape} | fd_max={md['fd_max']:.2f} Hz")
+        else:
+            print(f"  {vel_class}: {md['velocity_kmh']:.0f} km/h | (non-raw format)")
+
     return data
 
 
+# def load_dataset(filepath):
+#     """
+#     Load saved dataset
+    
+#     Args:
+#         filepath: Path to saved .pkl file
+        
+#     Returns:
+#         Loaded dataset dictionary
+#     """
+#     print(f"Loading dataset from: {filepath}")
+#     with open(filepath, 'rb') as f:
+#         data = pickle.load(f)
+    
+#     print("✓ Dataset loaded successfully!")
+    
+#     # Print summary
+#     print("\nDataset Configuration:")
+#     for key, value in data['config'].items():
+#         print(f"  {key}: {value}")
+    
+#     print("\nVelocity Classes:")
+#     for vel_class, vel_data in data['velocity_data'].items():
+#         metadata = vel_data['metadata']
+#         splits = vel_data['splits']
+#         print(f"  {vel_class}: {metadata['velocity_kmh']:.0f} km/h, "
+#               f"train={len(splits['X_train'])}")
+    
+#     return data
+
+
+# if __name__ == "__main__":
+#     from config import config
+    
+#     # Test dataset generation
+#     print("\nStarting dataset generation test...")
+    
+#     generator = TemporalDatasetGenerator(config)
+    
+#     # Load DeepMIMO
+#     generator.load_deepmimo_dataset()
+    
+#     # Generate for one velocity (test)
+#     test_data = generator.generate_velocity_class('pedestrian_5', add_noise=True)
+    
+#     print("\n✓ Test successful!")
+#     print(f"Generated {len(test_data['X_sequences'])} sequences")
+
 if __name__ == "__main__":
     from config import config
-    
-    # Test dataset generation
-    print("\nStarting dataset generation test...")
-    
+
+    print("\nStarting RAW dataset generation test (Option-A)...")
+
     generator = TemporalDatasetGenerator(config)
-    
-    # Load DeepMIMO
     generator.load_deepmimo_dataset()
-    
-    # Generate for one velocity (test)
-    test_data = generator.generate_velocity_class('pedestrian_5', add_noise=True)
-    
+
+    # Generate one velocity only (fast debug)
+    test_data = generator.generate_velocity_class("pedestrian_5", add_noise=True)
+    generator.temporal_data["pedestrian_5"] = test_data
+
+    output_path = generator.save_dataset(output_name="test_dataset_raw.pkl", save_mode="raw")
     print("\n✓ Test successful!")
-    print(f"Generated {len(test_data['X_sequences'])} sequences")
+    print("Saved:", output_path)
